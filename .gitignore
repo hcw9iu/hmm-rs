@@ -1,0 +1,5 @@
+target/
+.DS_Store
+
+# Default runtime file when launching `hmm` without arguments
+mind.hmm
