@@ -25,7 +25,7 @@ It is meant to bridge free-form visual thinking with actual issue management.
 
 Current UI snapshot:
 
-![hmm-rs current UI](docs/screenshot.png)
+![hmm-rs current UI](docs/Screenshot.png)
 
 ## Global install
 
