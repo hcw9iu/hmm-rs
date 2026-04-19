@@ -25,7 +25,9 @@ It is meant to bridge free-form visual thinking with actual issue management.
 
 Current UI snapshot:
 
-<img src="docs/Screenshot.png" alt="hmm-rs current UI" width="720" />
+<p align="center">
+  <img src="docs/Screenshot.png" alt="hmm-rs current UI" width="600" />
+</p>
 
 ## Global install
 
