@@ -1,0 +1,16 @@
+project
+	planning
+		goals
+		timeline
+		resources
+	development
+		frontend
+			UI design
+			components
+		backend
+			API
+			database
+	testing {linear=HCW-198}
+		unit tests
+		integration
+	deployment
