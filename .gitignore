@@ -1,5 +1,6 @@
 target/
 .DS_Store
+graymatter/
 
 # Default runtime file when launching `hmm` without arguments
 mind.hmm

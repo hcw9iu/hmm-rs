@@ -441,6 +441,43 @@ pub fn collapse_level(mm: &mut MindMap, level: usize) {
     }
 }
 
+/// Focus the tree around the active node.
+///
+/// Collapse sibling branches along the active path, then fully expand the
+/// active node's subtree.
+pub fn focus(mm: &mut MindMap) {
+    collapse_siblings(mm, mm.active_node);
+    expand_subtree(mm, mm.active_node);
+}
+
+fn collapse_siblings(mm: &mut MindMap, id: NodeId) {
+    if id <= mm.root_id {
+        return;
+    }
+
+    let parent_id = mm.node(id).parent;
+    let siblings = mm.node(parent_id).children.clone();
+    for cid in siblings {
+        if cid != id {
+            mm.node_mut(cid).collapsed = true;
+        }
+    }
+
+    collapse_siblings(mm, parent_id);
+}
+
+fn expand_subtree(mm: &mut MindMap, id: NodeId) {
+    if mm.node(id).is_leaf {
+        return;
+    }
+
+    mm.node_mut(id).collapsed = false;
+    let children = mm.node(id).children.clone();
+    for cid in children {
+        expand_subtree(mm, cid);
+    }
+}
+
 fn collapse_rec(mm: &mut MindMap, id: NodeId, keep: usize) {
     if mm.node(id).is_leaf {
         return;
@@ -560,6 +597,24 @@ mod tests {
         collapse_all(&mut mm);
         // root should not be collapsed, but its children should be
         assert!(!mm.node(mm.root_id).collapsed);
+    }
+
+    #[test]
+    fn focus_collapses_other_branches_and_expands_active_subtree() {
+        let mut mm = parser::parse("root\n\tA\n\t\tA1\n\tB\n\t\tB1\n");
+        let a = mm.node(mm.root_id).children[0];
+        let b = mm.node(mm.root_id).children[1];
+        let b1 = mm.node(b).children[0];
+
+        mm.node_mut(a).collapsed = false;
+        mm.node_mut(b).collapsed = true;
+        mm.active_node = b;
+
+        focus(&mut mm);
+
+        assert!(mm.node(a).collapsed);
+        assert!(!mm.node(b).collapsed);
+        assert!(!mm.node(b1).collapsed);
     }
 
     #[test]

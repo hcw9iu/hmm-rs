@@ -13,7 +13,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Terminal;
 
-use crate::layout::{self, LayoutConfig};
+use crate::layout::{self, LayoutConfig, RenderedMap};
 use crate::linear;
 use crate::model::{MindMap, NodeId};
 use crate::ops::{self, UndoHistory};
@@ -145,28 +145,44 @@ fn main_loop(
 
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let area = f.area();
-    let term_h = area.height as i32;
     let term_w = area.width as usize;
+    let status_height = 3;
+    let map_height = area.height.saturating_sub(status_height + 1) as i32;
+
+    if app.focus_lock {
+        ops::focus(&mut app.mm);
+    }
 
     app.cfg.show_hidden = app.show_hidden;
     let rmap = layout::build_map(&app.mm, &app.cfg);
+    if app.center_lock {
+        center_active_node_in_view(app, &rmap, area.width as i32, map_height, false);
+    }
 
     // find active node position for auto-scroll
     if let Some(al) = rmap.layout.get(&app.mm.active_node) {
+        let ax = al.x;
+        let aw = al.w + 2;
         let ay = al.y + al.yo;
         let alh = al.lh;
+        if ax < app.scroll_x {
+            app.scroll_x = ax;
+        }
+        if ax + aw > app.scroll_x + area.width as i32 {
+            app.scroll_x = ax + aw - area.width as i32;
+        }
         if ay < app.scroll_y {
             app.scroll_y = ay;
         }
-        if ay + alh > app.scroll_y + term_h - 2 {
-            app.scroll_y = ay + alh - term_h + 2;
+        if ay + alh > app.scroll_y + map_height {
+            app.scroll_y = ay + alh - map_height;
         }
     }
 
     // get active node region for highlighting
     let (ax1, ax2, ay1, ay2) = if let Some(al) = rmap.layout.get(&app.mm.active_node) {
-        let x1 = (al.x - 1).max(0) as usize;
-        let x2 = (al.x + al.w + 1).max(0) as usize;
+        let x1 = (al.x - 1 - app.scroll_x).max(0) as usize;
+        let x2 = (al.x + al.w + 1 - app.scroll_x).max(0) as usize;
         let y1 = al.y + al.yo;
         let y2 = al.y + al.yo + al.lh;
         (x1, x2, y1, y2)
@@ -184,14 +200,18 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let default_style = Style::default();
 
     let y_min = app.scroll_y;
-    let y_max = app.scroll_y + term_h - 2;
+    let y_max = app.scroll_y + map_height;
 
     let mut lines: Vec<Line> = Vec::new();
 
     for row_y in y_min..=y_max {
         let row_str = rmap.row_str(row_y);
         // truncate to terminal width
-        let display: String = row_str.chars().take(term_w).collect();
+        let display: String = row_str
+            .chars()
+            .skip(app.scroll_x.max(0) as usize)
+            .take(term_w)
+            .collect();
 
         if row_y >= ay1 && row_y < ay2 {
             // row contains the active node — split into 3 segments
@@ -240,11 +260,10 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     // pad
-    while (lines.len() as i32) < term_h - 1 {
+    while (lines.len() as i32) < map_height {
         lines.push(Line::from(""));
     }
 
-    let status_height = 3;
     let paragraph = Paragraph::new(lines);
     let map_area = Rect::new(
         0,
@@ -280,6 +299,58 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
         )
         .wrap(Wrap { trim: false });
     f.render_widget(status, status_area);
+}
+
+fn center_active_node(app: &mut App, only_vertically: bool) {
+    let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+    let map_height = (term_h.saturating_sub(4)).max(1) as i32;
+    app.cfg.show_hidden = app.show_hidden;
+    let rmap = layout::build_map(&app.mm, &app.cfg);
+    center_active_node_in_view(app, &rmap, term_w as i32, map_height, only_vertically);
+}
+
+fn center_active_node_in_view(
+    app: &mut App,
+    rmap: &RenderedMap,
+    view_w: i32,
+    view_h: i32,
+    only_vertically: bool,
+) {
+    let Some(al) = rmap.layout.get(&app.mm.active_node) else {
+        return;
+    };
+
+    let midx = al.x + (al.w / 2);
+    let midy = al.y + al.yo + (al.lh / 2);
+
+    if !only_vertically {
+        app.scroll_x = (midx - (view_w / 2)).max(0);
+    }
+    app.scroll_y = midy - (view_h / 2);
+}
+
+fn toggle_center_lock(app: &mut App) {
+    app.center_lock = !app.center_lock;
+    if app.center_lock {
+        center_active_node(app, false);
+        app.message = Some("center lock on".to_string());
+    } else {
+        app.message = Some("center lock off".to_string());
+    }
+}
+
+fn focus_active_node(app: &mut App) {
+    ops::focus(&mut app.mm);
+    center_active_node(app, false);
+}
+
+fn toggle_focus_lock(app: &mut App) {
+    app.focus_lock = !app.focus_lock;
+    app.message = Some(if app.focus_lock {
+        "focus lock on".to_string()
+    } else {
+        "focus lock off".to_string()
+    });
 }
 
 fn render_status_lines(app: &App) -> Vec<Line<'static>> {
@@ -535,6 +606,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('m') | KeyCode::Char('~') => {
             app.mm.active_node = app.mm.root_id;
         }
+        KeyCode::Char('c') => center_active_node(app, false),
+        KeyCode::Char('C') => toggle_center_lock(app),
+        KeyCode::Char('f') => focus_active_node(app),
+        KeyCode::Char('F') => toggle_focus_lock(app),
 
         // ── Collapse / Expand ──
         KeyCode::Char(' ') => ops::toggle_node(&mut app.mm),
